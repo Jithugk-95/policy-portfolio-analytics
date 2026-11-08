@@ -1,14 +1,52 @@
+import logging
 import re
+import sys
+from logging.handlers import RotatingFileHandler
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+
+APP_VERSION = "V1.8"
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+LOG_FILE = LOG_DIR / "policy_portfolio_analytics.log"
+
+
+def configure_logging():
+    """Set up console and rotating-file logs safely across Streamlit reruns."""
+    logger = logging.getLogger("policy_portfolio_analytics")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if not logger.handlers:
+        formatter = logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=5, encoding="utf-8"
+            )
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except OSError:
+            logger.warning("File logging unavailable; console logging remains active.")
+    return logger
+
+
+logger = configure_logging()
+logger.info("Application started (%s)", APP_VERSION)
+
 st.set_page_config(page_title="Policy Portfolio Analytics", page_icon="📊", layout="wide")
 st.title("📊 Policy Portfolio & Follow-up Analytics")
-st.caption("V1.5 • Optimized search • Paginated tables • Standard master workbook")
+st.caption(f"{APP_VERSION} • Logging & diagnostics • Optimized search • Paginated tables • Standard master workbook")
 
 # ---------------- Configuration ----------------
 ALIASES = {
@@ -251,11 +289,14 @@ if not uploaded:
     st.stop()
 
 file_bytes = uploaded.getvalue()
+logger.info("Workbook upload received (%.1f KB)", len(file_bytes) / 1024)
 try:
     xl = pd.ExcelFile(BytesIO(file_bytes))
     sheet_name = st.sidebar.selectbox("Master worksheet", xl.sheet_names)
     header_preview = pd.read_excel(xl, sheet_name=sheet_name, nrows=5, dtype=object)
+    logger.info("Workbook inspection completed; worksheet count=%d", len(xl.sheet_names))
 except Exception as exc:
+    logger.exception("Workbook inspection failed")
     st.error(f"Unable to inspect workbook: {exc}")
     st.stop()
 
@@ -273,7 +314,9 @@ mapping_pairs = tuple((k, v) for k, v in mapping.items())
 with st.spinner("Reading and preparing the workbook… This may take a few seconds on the first upload."):
     try:
         source_rows, grouped = load_master(file_bytes, sheet_name, mapping_pairs)
+        logger.info("Workbook processing completed; usable source rows=%d; grouped records=%d", len(source_rows), len(grouped))
     except Exception as exc:
+        logger.exception("Workbook processing failed")
         st.error(f"Workbook processing failed: {exc}")
         st.stop()
 
@@ -368,6 +411,7 @@ with tab3:
     if "policy_search_applied" not in st.session_state:
         st.session_state["policy_search_applied"] = ""
     if submitted:
+        logger.info("Policy search submitted")
         st.session_state["policy_search_applied"] = query_input.strip()
 
     applied_query = st.session_state["policy_search_applied"]
@@ -411,6 +455,7 @@ with tab3:
         st.write("")
         apply_tag = st.button("Apply tag", use_container_width=True, disabled=not selected_holders or not tag_value.strip())
     if apply_tag:
+        logger.info("Custom tag applied to %d policyholder(s)", len(selected_holders))
         for holder in selected_holders:
             tag_map[holder_key(holder)] = tag_value.strip()
         st.session_state["policyholder_tags"] = tag_map
@@ -419,6 +464,7 @@ with tab3:
 
     if tag_map:
         if st.button("Clear all custom tags"):
+            logger.info("All session custom tags cleared")
             st.session_state["policyholder_tags"] = {}
             st.rerun()
 
@@ -459,14 +505,18 @@ with tab4:
     export = grouped[[x for x in export_cols if x in grouped.columns]].copy()
     export["fup"] = pd.to_datetime(export["fup"], errors="coerce").dt.strftime("%m/%Y").fillna("")
     export = export.rename(columns={"custom_tag": "Custom Tag"})
-    st.download_button("⬇️ Download grouped portfolio (CSV)", export.to_csv(index=False).encode("utf-8-sig"),
+    csv_bytes = export.to_csv(index=False).encode("utf-8-sig")
+    logger.info("CSV export prepared; rows=%d", len(export))
+    st.download_button("⬇️ Download grouped portfolio (CSV)", csv_bytes,
                        "policy_portfolio.csv", "text/csv")
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         export.to_excel(writer, index=False, sheet_name="Grouped Portfolio")
         source_rows.to_excel(writer, index=False, sheet_name="Processed Source Rows")
         quality.to_excel(writer, index=False, sheet_name="Data Quality")
-    st.download_button("⬇️ Download portfolio report (Excel)", buf.getvalue(),
+    excel_bytes = buf.getvalue()
+    logger.info("Excel report export prepared; grouped rows=%d; source rows=%d", len(export), len(source_rows))
+    st.download_button("⬇️ Download portfolio report (Excel)", excel_bytes,
                        "policy_portfolio_report.xlsx",
                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 

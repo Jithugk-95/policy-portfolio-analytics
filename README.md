@@ -1,7 +1,6 @@
 # Policy Portfolio & Follow-up Analytics
 ## Application Behaviour Runbook
 
-
 **Application:** Policy Portfolio & Follow-up Analytics  
 **Current version:** V1.7  
 **Application type:** Local, single-user Streamlit web application  
@@ -717,3 +716,37 @@ Potential improvements, subject to business confirmation:
 
 **Document ownership:** Application project documentation  
 **Update this runbook whenever application behaviour, calculations, data rules, installation steps or security assumptions change.**
+
+
+---
+
+## V1.8 — Logging and error diagnostics
+
+### Log destinations
+Logs are written to the Command Prompt/terminal running `streamlit run app.py` and to `logs/policy_portfolio_analytics.log` beside `app.py`. The log file rotates at approximately 2 MB and retains up to five backups (`.log.1`, `.log.2`, etc.). If the log directory is not writable, console logging remains active.
+
+### Logged events
+- Application startup and version.
+- Workbook upload size (not filename or contents).
+- Workbook inspection and processing outcomes.
+- Usable source-row and grouped-record counts.
+- Search submissions (search text is not logged).
+- Tag actions (counts only; names and tag text are not logged).
+- CSV and Excel export preparation and row counts.
+- Full Python traceback for workbook inspection and processing failures.
+
+### Troubleshooting
+1. Start the app from Command Prompt using `streamlit run app.py`.
+2. Reproduce the problem.
+3. Find the `ERROR` entry and traceback in the terminal.
+4. If the terminal is closed, open `logs/policy_portfolio_analytics.log`.
+5. Review the traceback for private information before sharing it.
+
+### Privacy
+Log messages intentionally exclude policyholder names, policy numbers, mobile numbers, Aadhaar, PAN, bank details, addresses, dates of birth, search text, uploaded filenames, and workbook cell contents. Log files may still reveal operational activity; keep them private and do not commit them to a public repository.
+
+### V1.8 change log
+- Corrected the UI version label from V1.5 to V1.8.
+- Added timestamped console logging and rotating local log files.
+- Added diagnostics for upload, workbook inspection/processing, search, tagging, and exports.
+- Added traceback logging for workbook inspection and processing errors.
